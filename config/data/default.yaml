@@ -1,0 +1,9 @@
+# Default data configuration
+
+# == Default List ==
+defaults:
+   - cv: gpkf
+
+proc_data_ver: 1
+dp: null
+  #drop_rows_with_null_tgt: True

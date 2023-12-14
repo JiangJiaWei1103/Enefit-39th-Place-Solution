@@ -1,0 +1,8 @@
+# == Default List ==
+defaults:
+    - override job_logging: none
+    - override hydra_logging: none
+
+run:
+    dir: ./
+output_subdir: null

@@ -1,0 +1,22 @@
+# Core configuration
+
+# == Default List ==
+defaults:
+    - paths: default
+    - data: default
+    - model: xgb
+    - hydra: default
+
+# == Common ==
+# Project name
+project_name: Enefit
+# Experiment identifier
+exp_id: null
+# Number of random seeds for running experiments with the same setup
+n_seeds: 1
+# Random seed, currently picked automatically
+seed: null
+# If True, use wandb to track training and evaluation processes
+use_wandb: True
+# If True, the experiment runs for only one fold
+one_fold_only: False

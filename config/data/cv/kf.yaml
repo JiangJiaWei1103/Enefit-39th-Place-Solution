@@ -1,0 +1,4 @@
+# cv/kf
+n_folds: 5
+shuffle: True
+random_state: 42

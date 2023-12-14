@@ -1,0 +1,16 @@
+# XGBRegressor
+model_params:
+    n_estimators: 1 #2500 #20000
+    max_depth: 15
+    learning_rate: 0.01
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 32
+    reg_lambda: 2
+    eval_metric: mae
+    tree_method: gpu_hist
+    seed: 42
+    early_stopping_rounds: 50
+
+fit_params:
+    verbose: 250
