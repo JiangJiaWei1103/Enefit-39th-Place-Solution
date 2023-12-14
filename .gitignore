@@ -1,0 +1,30 @@
+# Cache
+__pycache__
+.ipynb_checkpoints
+wandb/
+*.swp
+.mypy_cache
+artifacts/
+log/
+
+# Script (Interface)
+tools/quick*
+
+# Dev
+notebooks/
+
+# Legacy code
+legacy/
+
+# Local cfg
+
+# Data
+data/raw/*
+data/processed/*
+
+# Local output buffer
+output/
+
+# Submission
+submission.csv
+submissions/
