@@ -7,30 +7,18 @@ Author: JiaWei Jiang
 import pickle
 import warnings
 from pathlib import Path
-from typing import List
 
 import hydra
 import pandas as pd
 from omegaconf.dictconfig import DictConfig
-from sklearn.metrics import mean_absolute_error as mae
 
 from cv.build import build_cv
 from cv.validation import cross_validate
 from data.data_processor import DataProcessor
 from experiment.experiment import Experiment
-from metadata import TGT_COL
 from modeling.build import build_ml_models
 
 warnings.simplefilter("ignore")
-
-
-def _load_feats(feats_path: Path) -> List[str]:
-    feats = []
-    with open(feats_path, "r") as f:
-        for line in f.readlines():
-            feats.append(line.strip())
-
-    return feats
 
 
 @hydra.main(config_path="../config", config_name="main_ml")
@@ -47,27 +35,20 @@ def main(cfg: DictConfig) -> None:
         exp.dump_cfg(exp.cfg, "main")
 
         # Prepare data
-        if exp.data_cfg["proc_data_ver"] is not None:
-            dp = None
-            proc_data_path = Path(exp.cfg["paths"]["PROC_DATA_PATH"])
-            # ===
-            # 1. Data only one version, keeps growing
-            # 2. Version control on feature set
-            # 3. Target also needs specify
-            data = pd.read_parquet(proc_data_path / "data.parquet")
-            data = data[data[TGT_COL].notna()].reset_index(drop=True)
-            feats = _load_feats(proc_data_path / "feats" / f"v{exp.data_cfg['proc_data_ver']}.txt")
-            X, y = data[feats], data[TGT_COL]
-            # ===
-        else:
-            dp = DataProcessor(**exp.data_cfg["dp"])
-            dp.run_before_splitting()
-            data = dp.get_data_cv()
+        dp = DataProcessor(Path(exp.data_cfg["data_path"]), **exp.data_cfg["dp"])
+        dp.run_before_splitting()
+        data = dp.get_data_cv()
+        X, y = data[dp.feats + ["is_consumption"]], data[dp.tgt_cols]
+        exp.log(f"Data shape | X {X.shape}, y {y.shape}")
+        exp.log(f"-> #Samples {len(X)}")
+        exp.log(f"-> #Features {X.shape[1] - 1}")
 
         # Run cross-validation
-        cv = build_cv(**{"scheme": "gpkf", **exp.data_cfg["cv"]})
+        cv = build_cv(**{"scheme": "tscv", **exp.data_cfg["cv"]})
         if "groups" in exp.data_cfg["cv"]:
             groups = data[exp.data_cfg["cv"]["groups"]]
+        else:
+            groups = None
 
         # Build models
         n_models = exp.data_cfg["cv"]["n_folds"]
@@ -101,7 +82,6 @@ def main(cfg: DictConfig) -> None:
         exp.log_prfs(prfs)
         feat_imps = pd.concat(cv_result["prod"].feat_imps + cv_result["cons"].feat_imps, ignore_index=True)
         exp.dump_df(feat_imps, file_name="feat_imps.parquet")
-        exp.set_cv_score(mae(data[TGT_COL], oof_pred))
 
 
 if __name__ == "__main__":

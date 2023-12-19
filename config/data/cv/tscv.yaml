@@ -1,0 +1,5 @@
+n_folds: 3
+val_size: 3
+n_gap_months: 0
+# Use timestamp indicator as pseudo group
+groups: datetime

@@ -7,6 +7,7 @@ This file contains the core logic of running cross validation.
 from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import lightgbm
 import numpy as np
 import pandas as pd
 
@@ -67,7 +68,6 @@ def cross_validate(
             y_pred: prediction
         """
         y_pred = model.predict(x)
-        y_pred = np.clip(y_pred, 0, np.inf)
 
         return y_pred
 
@@ -75,7 +75,11 @@ def cross_validate(
     tgt_type = kwargs["tgt_type"]
 
     # Define CV output objects
-    oof = np.zeros((len(X),))
+    tscv = True if cv.__class__.__name__ == "TSCV" else False
+    if tscv:
+        oof = np.zeros((len(X), cv.get_n_splits()))
+    else:
+        oof = np.zeros((len(X), 1))
     prfs: List[float] = []
     feat_imps: List[pd.DataFrame] = []
 
@@ -89,9 +93,13 @@ def cross_validate(
             fold_run = exp.add_wnb_run(cfg=exp.cfg, job_type=f"train_eval_{tgt_type}", name=f"fold{fold}")
 
         exp.log(f"===== Fold{fold} =====")
+        if tscv:
+            exp.log(f"## Training Months ## {groups[tr_idx].min()} ~ {groups[tr_idx].max()}")
+            exp.log(f"## Validation Months ## {groups[val_idx].min()} ~ {groups[val_idx].max()}")
         X_tr, X_val = X.iloc[tr_idx, :], X.iloc[val_idx, :]
-        y_tr, y_val = y.iloc[tr_idx], y.iloc[val_idx]
+        y_tr, y_val = y.iloc[tr_idx, 0], y.iloc[val_idx, 0]
 
+        # Further split by target types
         X_tr, y_tr = _split_data_by_tgt_type(X_tr, y_tr, tgt_type)
         X_val, y_val = _split_data_by_tgt_type(X_val, y_val, tgt_type)
 
@@ -101,13 +109,28 @@ def cross_validate(
             fit_params_fold = dictconfig2dict(fit_params).copy()
         if is_gbdt_instance(models[fold], ["xgb", "lgbm", "cat"]):
             fit_params_fold["eval_set"] = [(X_tr, y_tr), (X_val, y_val)]
-
+            if is_gbdt_instance(models[fold], "lgbm"):
+                fit_params_fold["callbacks"] = [
+                    lightgbm.early_stopping(50),
+                    lightgbm.log_evaluation(200),
+                ]
             # Add categorical features...
+            # ...
         models[fold].fit(X_tr, y_tr, **fit_params_fold)
 
+        # Evaluate on oof
         val_idx = X_val.index
-        oof[val_idx] = _predict(models[fold], X_val)
-        prf = mae(y_val, oof[val_idx])
+        oof_pred = _predict(models[fold], X_val)
+        # ===
+        # oof_pred = oof_pred * y.iloc[val_idx, 1]  # Inverse transform prediction
+        oof_pred = np.clip(oof_pred, 0, np.inf)  # Clip prediction
+        # ===
+        if tscv:
+            oof[val_idx, fold] = oof_pred
+        else:
+            oof[val_idx] = oof_pred
+        # prf = mae(y_val * y.iloc[val_idx, 1], oof_pred)
+        prf = mae(y_val, oof_pred)
         prfs.append(prf)
         exp.log(f"-> MAE: {prf}")
 
