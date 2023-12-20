@@ -2,8 +2,17 @@
 
 # == Default List ==
 defaults:
-   - cv: gpkf
+   - cv: tscv
 
-proc_data_ver: 1
-dp: null
-  #drop_rows_with_null_tgt: True
+data_path: ${paths.PROC_DATA_PATH}
+# Specify target types for separate modeling
+# 1. ["prod", "cons"]
+# 2. ["prod", "cons_c", "cons_b"]
+# tgt_types: ["prod", "cons"]
+tgt_types: ["prod", "cons_c", "cons_b"]
+# tgt_types: ["cons_c", "cons_b"]
+dp:
+    feats_ver: 11
+    tgt_col: target_f64_div_cap
+    tgt_aux_cols: [installed_capacity]
+    drop_rows_with_null_tgt: True

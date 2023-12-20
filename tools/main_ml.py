@@ -7,6 +7,8 @@ Author: JiaWei Jiang
 import gc
 import pickle
 import warnings
+from collections import defaultdict
+from itertools import chain
 from pathlib import Path
 from typing import List
 
@@ -49,7 +51,7 @@ def main(cfg: DictConfig) -> None:
         exp.log(f"-> #Samples {len(X)}")
         exp.log(f"-> #Features {X.shape[1] - 1}")
 
-        # Run cross-validation
+        # Build cross-validator
         cv = build_cv(**{"scheme": "tscv", **exp.data_cfg["cv"]})
         if "groups" in exp.data_cfg["cv"]:
             groups = data[exp.data_cfg["cv"]["groups"]]
@@ -57,17 +59,15 @@ def main(cfg: DictConfig) -> None:
             groups = None
 
         # Build models
+        tgt_types = exp.data_cfg["tgt_types"]
         n_models = exp.data_cfg["cv"]["n_folds"]
         model_params = exp.model_cfg["model_params"]
         fit_params = exp.model_cfg["fit_params"]
-        models = {
-            "prod": build_ml_models(exp.model_name, n_models, **model_params),
-            "cons": build_ml_models(exp.model_name, n_models, **model_params),
-        }
+        models = {tgt_type: build_ml_models(exp.model_name, n_models, **model_params) for tgt_type in tgt_types}
 
         # Run cross-validation
         cv_result = {}
-        for tgt_type in ["prod", "cons"]:
+        for tgt_type in tgt_types:
             exp.log(f"Run cross-validation for {tgt_type} models...")
             cv_result[tgt_type] = cross_validate(
                 exp=exp,
@@ -83,11 +83,15 @@ def main(cfg: DictConfig) -> None:
         # Dump CV output objects
         with open(exp.exp_dump_path / "models/models.pkl", "wb") as f:
             pickle.dump(models, f)
-        oof_pred = cv_result["prod"].oof_pred + cv_result["cons"].oof_pred
+        oof_pred = np.zeros(cv_result[tgt_types[0]].oof_pred.shape)
+        for tgt_type in tgt_types:
+            oof_pred = oof_pred + cv_result[tgt_type].oof_pred
         exp.dump_ndarr(oof_pred, "oof")
-        prfs = {"prod": cv_result["prod"].oof_prfs, "cons": cv_result["cons"].oof_prfs}
+        prfs = {tgt_type: cv_result[tgt_type].oof_prfs for tgt_type in tgt_types}
         exp.log_prfs(prfs)
-        feat_imps = pd.concat(cv_result["prod"].feat_imps + cv_result["cons"].feat_imps, ignore_index=True)
+        feat_imps = pd.concat(
+            list(chain(*[cv_result[tgt_type].feat_imps for tgt_type in tgt_types])), ignore_index=True
+        )
         exp.dump_df(feat_imps, file_name="feat_imps.parquet")
 
         # Run optional full-train
@@ -98,35 +102,43 @@ def main(cfg: DictConfig) -> None:
                 best_iter = np.median(best_iters)
                 # ===
                 # Adjust w/ tr / val sizes
+                # https://www.kaggle.com/code/iglovikov/xgb-1114/comments#141375
                 best_iter = int(best_iter / 0.8)
                 # ===
                 return best_iter
 
-            best_iter = {"prod": _get_refit_iter(models["prod"]), "cons": _get_refit_iter(models["cons"])}
+            best_iter = {tgt_type: _get_refit_iter(models[tgt_type]) for tgt_type in tgt_types}
             del models
             gc.collect()
-            models = {"prod": [], "cons": []}
-            for tgt_type in models.keys():
+            models = defaultdict(list)
+            for tgt_type in tgt_types:
                 model_params_ft = model_params.copy()
                 model_params_ft["n_estimators"] = best_iter[tgt_type]
                 for seed in range(3):
                     model_params_ft["seed"] = seed
                     models[tgt_type].append(build_ml_models(exp.model_name, 1, **model_params_ft)[0])
 
-            for tgt_type in ["prod", "cons"]:
+            for tgt_type in tgt_types:
                 exp.log(f"Run full-training for {tgt_type} models with best iter {best_iter[tgt_type]}...")
 
                 if tgt_type == "prod":
                     tgt_mask = X["is_consumption"] == 0
-                else:
+                elif tgt_type == "cons":
                     tgt_mask = X["is_consumption"] == 1
-                X_tr = X[tgt_mask].drop("is_consumption", axis=1)
+                elif tgt_type == "cons_c":
+                    tgt_mask = (X["is_consumption"] == 1) & (X["is_business"] == 0)
+                elif tgt_type == "cons_b":
+                    # Business consumption
+                    tgt_mask = (X["is_consumption"] == 1) & (X["is_business"] == 1)
+                cols_to_drop = ["is_consumption"]
+                if tgt_type in ["cons_c", "cons_b"]:
+                    cols_to_drop.append("is_business")
+                X_tr = X[tgt_mask].drop(cols_to_drop, axis=1)
                 y_tr = y.iloc[:, 0][X_tr.index]
 
                 for seed in range(3):
                     if cfg["use_wandb"]:
                         seed_run = exp.add_wnb_run(
-                            # cfg={"model": {"model_params": model_params}},
                             job_type=f"ft_{tgt_type}",
                             name=f"seed{seed}",
                         )

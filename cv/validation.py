@@ -122,15 +122,18 @@ def cross_validate(
         val_idx = X_val.index
         oof_pred = _predict(models[fold], X_val)
         # ===
-        # oof_pred = oof_pred * y.iloc[val_idx, 1]  # Inverse transform prediction
+        if y.shape[1] > 1:
+            oof_pred = oof_pred * y.iloc[val_idx, 1]  # Inverse transform prediction
         oof_pred = np.clip(oof_pred, 0, np.inf)  # Clip prediction
         # ===
         if tscv:
             oof[val_idx, fold] = oof_pred
         else:
             oof[val_idx] = oof_pred
-        # prf = mae(y_val * y.iloc[val_idx, 1], oof_pred)
-        prf = mae(y_val, oof_pred)
+        if y.shape[1] > 1:
+            prf = mae(y_val * y.iloc[val_idx, 1], oof_pred)
+        else:
+            prf = mae(y_val, oof_pred)
         prfs.append(prf)
         exp.log(f"-> MAE: {prf}")
 
@@ -138,7 +141,7 @@ def cross_validate(
         if is_gbdt_instance(models[fold], ["xgb", "lgbm", "cat"]):
             feat_imp = _get_feat_imp(models[fold], list(X_tr.columns), imp_type)
             feat_imp["fold"] = fold
-            feat_imp["is_cons"] = True if tgt_type == "cons" else False
+            feat_imp["tgt_type"] = tgt_type
             feat_imps.append(feat_imp)
 
         if exp.cfg.use_wandb:
@@ -154,10 +157,18 @@ def _split_data_by_tgt_type(X: pd.DataFrame, y: pd.Series, tgt_type: str) -> Tup
     """Split datasetes by target type."""
     if tgt_type == "prod":
         tgt_mask = X["is_consumption"] == 0
-    else:
+    elif tgt_type == "cons":
         tgt_mask = X["is_consumption"] == 1
+    elif tgt_type == "cons_c":
+        tgt_mask = (X["is_consumption"] == 1) & (X["is_business"] == 0)
+    elif tgt_type == "cons_b":
+        # Business consumption
+        tgt_mask = (X["is_consumption"] == 1) & (X["is_business"] == 1)
 
-    X_ = X[tgt_mask].drop("is_consumption", axis=1)
+    cols_to_drop = ["is_consumption"]
+    if tgt_type in ["cons_c", "cons_b"]:
+        cols_to_drop.append("is_business")
+    X_ = X[tgt_mask].drop(cols_to_drop, axis=1)
     y_ = y[X_.index]
     assert y.notna().all()
 
