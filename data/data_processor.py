@@ -71,12 +71,14 @@ class DataProcessor(object):
             self.feats
             # Target
             + [self.tgt_col]
-            + self.tgt_aux_cols
             # CV columns
             + [UNIT_ID_COL, "datetime"]
             # Separate modeling
             + ["is_consumption"]
         )
+        for col in self.tgt_aux_cols:
+            if col not in cols_to_load:
+                cols_to_load.append(col)
         self._data_cv = pl.read_parquet(self.data_path / "data_eager.parquet", columns=cols_to_load)
         self._data_test = None
 
@@ -110,7 +112,8 @@ class DataProcessor(object):
         self._data_cv = self._data_cv.to_pandas()
 
         logging.info(f"\t>> Specify categorical features {self.cat_feats}")
-        self._data_cv[self.cat_feats] = self._data_cv[self.cat_feats].astype("category")
+        if len(self.cat_feats) != 0:
+            self._data_cv[self.cat_feats] = self._data_cv[self.cat_feats].astype("category")
 
         logging.info("Done.")
 
