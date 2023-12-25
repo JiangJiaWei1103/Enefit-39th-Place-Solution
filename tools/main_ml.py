@@ -19,7 +19,7 @@ from omegaconf.dictconfig import DictConfig
 from sklearn.base import BaseEstimator
 
 from cv.build import build_cv
-from cv.validation import cross_validate
+from cv.validation import _downsample_quasi0_prod, cross_validate
 from data.data_processor import DataProcessor
 from experiment.experiment import Experiment
 from modeling.build import build_ml_models
@@ -78,6 +78,7 @@ def main(cfg: DictConfig) -> None:
                 fit_params=fit_params,
                 groups=groups,
                 tgt_type=tgt_type,
+                downsamp_quasi0=exp.data_cfg["dp"]["downsamp_quasi0"],
             )
 
         # Dump CV output objects
@@ -135,6 +136,11 @@ def main(cfg: DictConfig) -> None:
                     cols_to_drop.append("is_business")
                 X_tr = X[tgt_mask].drop(cols_to_drop, axis=1)
                 y_tr = y.iloc[:, 0][X_tr.index]
+                # ===
+                if tgt_type.startswith("prod") and exp.data_cfg["dp"]["downsamp_quasi0"]["ratio"] != 1:
+                    exp.log(">> Downsample quasi-zero production values...")
+                    X_tr, y_tr = _downsample_quasi0_prod(X_tr, y_tr, **exp.data_cfg["dp"]["downsamp_quasi0"])
+                # ===
 
                 for seed in range(3):
                     if cfg["use_wandb"]:

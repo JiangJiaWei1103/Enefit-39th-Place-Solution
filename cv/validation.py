@@ -4,12 +4,14 @@ Author: JiaWei Jiang
 
 This file contains the core logic of running cross validation.
 """
+import logging
 from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import lightgbm
 import numpy as np
 import pandas as pd
+import polars as pl
 
 # from category_encoders.utils import convert_input, convert_input_vector
 from sklearn.base import BaseEstimator
@@ -73,6 +75,7 @@ def cross_validate(
 
     # Split modeling matters
     tgt_type = kwargs["tgt_type"]
+    downsamp_quasi0 = kwargs["downsamp_quasi0"]
 
     # Define CV output objects
     tscv = True if cv.__class__.__name__ == "TSCV" else False
@@ -101,6 +104,10 @@ def cross_validate(
 
         # Further split by target types
         X_tr, y_tr = _split_data_by_tgt_type(X_tr, y_tr, tgt_type)
+        if tgt_type.startswith("prod") and downsamp_quasi0["ratio"] != 1:
+            exp.log(">> Downsample quasi-zero production values...")
+            X_tr, y_tr = _downsample_quasi0_prod(X_tr, y_tr, **downsamp_quasi0)
+        # ===
         X_val, y_val = _split_data_by_tgt_type(X_val, y_val, tgt_type)
 
         if fit_params is None:
@@ -153,6 +160,34 @@ def cross_validate(
     return cv_result
 
 
+def _downsample_quasi0_prod(
+    X: pd.DataFrame,
+    y: pd.Series,
+    ratio: float = 0.5,
+    abs_tol: float = 3e-3,
+    set_to_zero: bool = False,
+) -> pl.DataFrame:
+    """Downsample quasi-zero production values."""
+    samp_size_s = len(X)
+
+    # Downsample
+    quasi0_mask = np.isclose(y.values, 0, atol=abs_tol)
+    quasi0_idx = np.where(quasi0_mask)[0]
+    sampled_idx = np.random.choice(quasi0_idx, int(len(quasi0_idx) * ratio), replace=False)
+
+    # Recombine data
+    slc_idx = sorted(np.hstack([np.where(~quasi0_mask)[0], sampled_idx]))
+    if set_to_zero:
+        y.iloc[sampled_idx] = 0
+    y = y.iloc[slc_idx]
+    X = X.iloc[slc_idx]
+
+    samp_size_e = len(X)
+    logging.info(f"#Samples is reduced from {samp_size_s} to {samp_size_e}.")
+
+    return X, y
+
+
 def _split_data_by_tgt_type(X: pd.DataFrame, y: pd.Series, tgt_type: str) -> Tuple[pd.DataFrame, pd.Series]:
     """Split datasetes by target type."""
     if tgt_type == "prod":
@@ -170,7 +205,7 @@ def _split_data_by_tgt_type(X: pd.DataFrame, y: pd.Series, tgt_type: str) -> Tup
         cols_to_drop.append("is_business")
     X_ = X[tgt_mask].drop(cols_to_drop, axis=1)
     y_ = y[X_.index]
-    assert y.notna().all()
+    assert y_.notna().all()
 
     return X_, y_
 

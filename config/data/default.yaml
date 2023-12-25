@@ -6,13 +6,20 @@ defaults:
 
 data_path: ${paths.PROC_DATA_PATH}
 # Specify target types for separate modeling
-# 1. ["prod", "cons"]
-# 2. ["prod", "cons_c", "cons_b"]
-# tgt_types: ["prod", "cons"]
-tgt_types: ["prod", "cons_c", "cons_b"]
+# tgt_types: ["prod"]
+# tgt_types: ["cons"]
+tgt_types: ["prod", "cons"]
+# tgt_types: ["prod", "cons_c", "cons_b"]
 # tgt_types: ["cons_c", "cons_b"]
 dp:
-    feats_ver: 11
-    tgt_col: target_f64_div_cap
-    tgt_aux_cols: [installed_capacity]
+    reduce_mem: False
+    cols_to_load: []
+    feats_ver: "12_1"
+    tgt_col: target_f64
+    tgt_aux_cols: []
     drop_rows_with_null_tgt: True
+    # Only used for production model
+    downsamp_quasi0:
+        ratio: 1 #0.5  # 0.2 for target_f64
+        abs_tol: null #1e-6  # 1e-3 for target_f64
+        set_to_zero: False
