@@ -1,0 +1,3 @@
+# trainer/lr_skd/cos
+name: cos
+num_warmup_steps: 0

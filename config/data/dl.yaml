@@ -1,0 +1,29 @@
+# Default data configuration
+
+# == Default List ==
+defaults:
+   - cv: tscv
+
+data_path: ${paths.PROC_DATA_PATH}
+# Specify target types for separate modeling
+tgt_types: null
+dp:
+    cols_to_load: ['prediction_unit_id', 'county', 'is_business', 'product_type',
+      'datetime', 'is_consumption', 'quarter', 'month',
+      'day', 'weekday', 'hour', 'dayofyear', 'holiday_type'
+    ]
+    reduce_mem: True
+    feats_ver: null
+    tgt_col: target_f64_div_cap
+    tgt_aux_cols: [installed_capacity]
+    drop_rows_with_null_tgt: False
+
+    # Exists for compatibility
+    downsamp_quasi0: null
+
+# == Dataset ==
+dataset:
+    tgt_col: target_f64_div_cap
+    t_window: 144
+    gap: 24
+    horizon: 24

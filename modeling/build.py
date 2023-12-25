@@ -16,6 +16,7 @@ from sklearn.base import BaseEstimator
 from torch.nn import Module
 from xgboost import XGBRegressor
 
+from .baselines import BaseTSModel
 from .demo.Demo import DemoModel
 
 
@@ -32,6 +33,8 @@ def build_model(model_name: str, **model_cfg: Any) -> Module:
     model: Module
     if model_name == "DemoModel":
         model = DemoModel(**model_cfg)
+    elif model_name == "BaseTSModel":
+        model = BaseTSModel(**model_cfg)
     elif model_name.startswith("Exp"):
         # For quick dev and verification
         model_module = import_module(f"modeling.exp.{model_name}")
@@ -55,7 +58,5 @@ def build_ml_models(model_name: str, n_models: int, **model_cfg: Any) -> List[Ba
     """
     if model_name == "xgb":
         models = [XGBRegressor(**model_cfg) for _ in range(n_models)]
-    elif model_name == "lgbm":
-        pass
 
     return models
