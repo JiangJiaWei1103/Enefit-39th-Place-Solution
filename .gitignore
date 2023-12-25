@@ -7,11 +7,16 @@ wandb/
 artifacts/
 log/
 
+# Tmp
+*.tmp
+
 # Script (Interface)
 tools/quick*
 
 # Dev
 notebooks/
+*.ipynb
+!FE.ipynb
 
 # Legacy code
 legacy/
@@ -19,11 +24,14 @@ legacy/
 # Local cfg
 
 # Data
-data/raw/*
+data/raw*/
 data/processed/*
 
 # Local output buffer
 output/
+
+# Reference
+refs/
 
 # Submission
 submission.csv
