@@ -1,0 +1,5 @@
+# model/BaseTSModel
+model_params: {}
+
+# Always ignored, exists for compatibility
+fit_params: null

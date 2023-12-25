@@ -46,12 +46,20 @@ class DataProcessor(object):
 
     def _setup(self) -> None:
         """Retrieve hyperparameters for data processing."""
+        # Load data
+        self.cols_to_load = self.dp_cfg["cols_to_load"]
+        self.reduce_mem = self.dp_cfg["reduce_mem"]
+
         # Before data splitting
         self.feats_ver = self.dp_cfg["feats_ver"]
+        if self.feats_ver is not None:
+            self._load_feats()
+        else:
+            self._num_feats, self._cat_feats, self._feats = [], [], []  # type: ignore
+
         self.tgt_col = self.dp_cfg["tgt_col"]
         self.tgt_aux_cols = self.dp_cfg["tgt_aux_cols"]
         self.drop_rows_with_null_tgt = self.dp_cfg["drop_rows_with_null_tgt"]
-        self._load_feats()
         self.tgt_cols = [self.tgt_col] + self.tgt_aux_cols
 
         # After data splitting...
@@ -66,21 +74,74 @@ class DataProcessor(object):
 
     def _load_data(self) -> None:
         """Load raw data."""
-        cols_to_load = (
-            # Features
-            self.feats
-            # Target
-            + [self.tgt_col]
-            # CV columns
-            + [UNIT_ID_COL, "datetime"]
-            # Separate modeling
-            + ["is_consumption"]
-        )
+        if len(self.cols_to_load) == 0:
+            cols_to_load = (
+                # Features
+                self.feats
+                # Target
+                + [self.tgt_col]
+                # CV columns
+                + [UNIT_ID_COL, "datetime"]
+                # Separate modeling
+                + ["is_consumption"]
+            )
+        else:
+            cols_to_load = self.cols_to_load + [self.tgt_col]
         for col in self.tgt_aux_cols:
             if col not in cols_to_load:
                 cols_to_load.append(col)
         self._data_cv = pl.read_parquet(self.data_path / "data_eager.parquet", columns=cols_to_load)
         self._data_test = None
+
+        if self.reduce_mem:
+            logging.info("Reduce memory footprint of loaded DataFrame...")
+            self._data_cv = self._reduce_memory_usage(self._data_cv)
+
+    def _reduce_memory_usage(self, df: pl.DataFrame, cols_to_skip: List[str] = []) -> pl.DataFrame:
+        """Reduce memory usage by dtype casting.
+
+        Args:
+            df: raw DataFrame
+            cols_to_skip: columns to skip dtype casting
+
+        Returns:
+            df: DataFrame with reduced memory footprint
+        """
+        start_mem = df.estimated_size("mb")
+        logging.info(f"\t>> Memory usage of DataFrame is {start_mem:.2f} MB.")
+
+        NUM_INT_TYPES = [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt32]
+        NUM_FLOAT_TYPES = [pl.Float32, pl.Float64]
+        for col in df.columns:
+            if col in cols_to_skip:
+                continue
+
+            col_type = df[col].dtype
+            c_min = df[col].min()
+            c_max = df[col].max()
+            if col_type in NUM_INT_TYPES:
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df = df.with_columns(df[col].cast(pl.Int8))
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df = df.with_columns(df[col].cast(pl.Int16))
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df = df.with_columns(df[col].cast(pl.Int32))
+                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
+                    df = df.with_columns(df[col].cast(pl.Int64))
+            elif col_type in NUM_FLOAT_TYPES:
+                if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df = df.with_columns(df[col].cast(pl.Float32))
+                else:
+                    pass
+            elif col_type == pl.Utf8:
+                df = df.with_columns(df[col].cast(pl.Categorical))
+            else:
+                pass
+        end_mem = df.estimated_size("mb")
+        logging.info(f"\t>> Memory usage became: {end_mem:.2f} MB.")
+        logging.info(f"\t>> Total {(start_mem-end_mem) / start_mem * 100:.2f}% reduced.")
+
+        return df
 
     @property
     def feats(self) -> List[str]:
@@ -108,11 +169,18 @@ class DataProcessor(object):
             logging.info(f"\t>> Drop rows with null target {self.tgt_col}...")
             self._data_cv = self._data_cv.filter(pl.col(self.tgt_col).is_not_null())
 
+        # if self.tgt_col == "target_f64" and self.drop_outliers:
+        #     logging.info(f"\t>> Drop outliers...")
+        #     n_samps_s = len(self._data_cv)
+        #     self._data_cv = self._data_cv.filter(~outlier_mask)
+        #     n_samps_e = len(self._data_cv)
+        #     logging.info(f"\t>> -> #Drop outliers: {n_samps_s - n_samps_e}")
+
         logging.info("\t>> Convert pl.DataFrame to pd.DataFrame...")
         self._data_cv = self._data_cv.to_pandas()
 
-        logging.info(f"\t>> Specify categorical features {self.cat_feats}")
         if len(self.cat_feats) != 0:
+            logging.info(f"\t>> Specify categorical features {self.cat_feats}")
             self._data_cv[self.cat_feats] = self._data_cv[self.cat_feats].astype("category")
 
         logging.info("Done.")
