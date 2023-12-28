@@ -14,6 +14,7 @@ PRODUCT_TYPE2NAME = {0: "Combined", 1: "Fixed", 2: "General service", 3: "Spot"}
 # == Join keys ==
 CLI_JOIN_KEYS = ["county", "is_business", "product_type", DBI]
 FWTH_JOIN_KEYS = ["county", DBI, "datetime"]  # datetime is the fixed version of forecast_datetime
+HWTH_JOIN_KEYS = ["county", "datetime"]
 REVEALED_TGT_JOIN_KEYS = [UNIT_ID_COL, "datetime", "is_consumption"]
 REVEALED_TGT_ROLLING_JOIN_KEYS = [UNIT_ID_COL, "datetime", "is_consumption"]
 

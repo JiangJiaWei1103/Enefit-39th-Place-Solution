@@ -15,7 +15,7 @@ import pandas as pd
 import polars as pl
 from sklearn.preprocessing import StandardScaler
 
-from metadata import UNIT_ID_COL
+from metadata import TGT_PK_COLS, UNIT_ID_COL
 
 
 class DataProcessor(object):
@@ -47,15 +47,12 @@ class DataProcessor(object):
     def _setup(self) -> None:
         """Retrieve hyperparameters for data processing."""
         # Load data
-        self.cols_to_load = self.dp_cfg["cols_to_load"]
+        self.data_file = self.dp_cfg["data_file"]
         self.reduce_mem = self.dp_cfg["reduce_mem"]
 
         # Before data splitting
         self.feats_ver = self.dp_cfg["feats_ver"]
-        if self.feats_ver is not None:
-            self._load_feats()
-        else:
-            self._num_feats, self._cat_feats, self._feats = [], [], []  # type: ignore
+        self._load_feats()
 
         self.tgt_col = self.dp_cfg["tgt_col"]
         self.tgt_aux_cols = self.dp_cfg["tgt_aux_cols"]
@@ -69,28 +66,23 @@ class DataProcessor(object):
         """Load features."""
         with open(self.data_path / "feats" / f"v{self.feats_ver}.pkl", "rb") as f:
             feats = pickle.load(f)
-        self._num_feats, self._cat_feats = feats["num"], feats["cat"]
-        self._feats = self._num_feats + self._cat_feats
+        if isinstance(feats, list):
+            self._num_feats, self._cat_feats = [], []  # type: ignore
+            self._feats = feats
+        else:
+            self._num_feats, self._cat_feats = feats["num"], feats["cat"]
+            self._feats = self._num_feats + self._cat_feats
 
     def _load_data(self) -> None:
         """Load raw data."""
-        if len(self.cols_to_load) == 0:
-            cols_to_load = (
-                # Features
-                self.feats
-                # Target
-                + [self.tgt_col]
-                # CV columns
-                + [UNIT_ID_COL, "datetime"]
-                # Separate modeling
-                + ["is_consumption"]
-            )
-        else:
-            cols_to_load = self.cols_to_load + [self.tgt_col]
-        for col in self.tgt_aux_cols:
-            if col not in cols_to_load:
-                cols_to_load.append(col)
-        self._data_cv = pl.read_parquet(self.data_path / "data_eager.parquet", columns=cols_to_load)
+        cols_to_load = TGT_PK_COLS + [UNIT_ID_COL, "datetime", "is_consumption"]
+        for feat in self.feats:
+            if feat not in cols_to_load:
+                cols_to_load.append(feat)
+        for tgt_col in self.tgt_cols:
+            if tgt_col not in cols_to_load:
+                cols_to_load.append(tgt_col)
+        self._data_cv = pl.read_parquet(self.data_path / self.data_file, columns=cols_to_load)
         self._data_test = None
 
         if self.reduce_mem:

@@ -32,7 +32,7 @@ def build_dataloader(
     collate = None
     shuffle = dataloader_cfg["shuffle"] if data_split == "train" else False
     dataloader = DataLoader(
-        TSDataset(data, **dataset_cfg),
+        TSDataset(data, data_split, **dataset_cfg),
         batch_size=dataloader_cfg["batch_size"],
         shuffle=shuffle,
         num_workers=dataloader_cfg["num_workers"],

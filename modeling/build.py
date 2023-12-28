@@ -17,7 +17,6 @@ from torch.nn import Module
 from xgboost import XGBRegressor
 
 from .baselines import BaseTSModel
-from .demo.Demo import DemoModel
 
 
 def build_model(model_name: str, **model_cfg: Any) -> Module:
@@ -31,9 +30,7 @@ def build_model(model_name: str, **model_cfg: Any) -> Module:
         model: model instance
     """
     model: Module
-    if model_name == "DemoModel":
-        model = DemoModel(**model_cfg)
-    elif model_name == "BaseTSModel":
+    if model_name == "BaseTSModel":
         model = BaseTSModel(**model_cfg)
     elif model_name.startswith("Exp"):
         # For quick dev and verification
