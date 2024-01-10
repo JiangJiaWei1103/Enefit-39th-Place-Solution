@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from metadata import DBI, TGT_PK_COLS
+from metadata import CAST_COORDS, CAST_COUNTY, COORD_COL2ABBR, DBI, TGT_PK_COLS
 
 
 class DataStorage(object):
@@ -93,8 +93,11 @@ class DataStorage(object):
         "is_consumption",
         "datetime",
         "row_id",
+        # ===
+        # Add this dummy column for joining fwth
+        DBI
+        # ===
     ]
-    location_cols = ["longitude", "latitude", "county"]
 
     def __init__(
         self,
@@ -133,14 +136,13 @@ class DataStorage(object):
             self.test_schema["row_id"] = pl.Int64
 
         # Load static auxiliary data
-        # ===
-        # self.df_weather_station_to_county_mapping = (
-        #     self.df_weather_station_to_county_mapping.with_columns(
-        #         pl.col("latitude").cast(pl.datatypes.Float32),
-        #         pl.col("longitude").cast(pl.datatypes.Float32),
-        #     )
-        # )
-        # ===
+        self.wstn_loc2county = (
+            pl.read_csv("./data/processed/wth_station_latlon2county.csv")
+            .drop("")
+            .rename(COORD_COL2ABBR)
+            .with_columns(CAST_COUNTY + CAST_COORDS)
+        )
+        # holidays...
 
     def _load_data(self) -> Tuple[pl.DataFrame, ...]:
         """Specify columns to load as constant???"""
