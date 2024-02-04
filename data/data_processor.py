@@ -15,7 +15,7 @@ import pandas as pd
 import polars as pl
 from sklearn.preprocessing import StandardScaler
 
-from metadata import TGT_PK_COLS, UNIT_ID_COL
+from metadata import TGT_PK_COLS
 
 
 class DataProcessor(object):
@@ -52,6 +52,7 @@ class DataProcessor(object):
 
         # Before data splitting
         self.feats_ver = self.dp_cfg["feats_ver"]
+        self.cat_cols = self.dp_cfg["cat_cols"]
         self._load_feats()
 
         self.tgt_col = self.dp_cfg["tgt_col"]
@@ -65,17 +66,15 @@ class DataProcessor(object):
     def _load_feats(self) -> None:
         """Load features."""
         with open(self.data_path / "feats" / f"v{self.feats_ver}.pkl", "rb") as f:
-            feats = pickle.load(f)
-        if isinstance(feats, list):
-            self._num_feats, self._cat_feats = [], []  # type: ignore
-            self._feats = feats
-        else:
-            self._num_feats, self._cat_feats = feats["num"], feats["cat"]
-            self._feats = self._num_feats + self._cat_feats
+            self._feats = pickle.load(f)
+        assert isinstance(self._feats, list), "Please provide feature list."
+        self._num_feats = [feat for feat in self._feats if feat not in self.cat_cols]
+        self._cat_feats = self.cat_cols
 
     def _load_data(self) -> None:
         """Load raw data."""
-        cols_to_load = TGT_PK_COLS + [UNIT_ID_COL, "datetime", "is_consumption"]
+        # cols_to_load = TGT_PK_COLS + [UNIT_ID_COL, "datetime", "is_consumption"]
+        cols_to_load = TGT_PK_COLS + ["datetime", "is_consumption"]
         for feat in self.feats:
             if feat not in cols_to_load:
                 cols_to_load.append(feat)
@@ -167,6 +166,9 @@ class DataProcessor(object):
         #     self._data_cv = self._data_cv.filter(~outlier_mask)
         #     n_samps_e = len(self._data_cv)
         #     logging.info(f"\t>> -> #Drop outliers: {n_samps_s - n_samps_e}")
+
+        logging.info("\t>> Add `seg` column for mimicing unseen units...")
+        self._data_cv = self._data_cv.with_columns(pl.concat_str(*TGT_PK_COLS, separator="_").alias("seg"))
 
         logging.info("\t>> Convert pl.DataFrame to pd.DataFrame...")
         self._data_cv = self._data_cv.to_pandas()

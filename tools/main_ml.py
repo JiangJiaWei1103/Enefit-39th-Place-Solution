@@ -8,6 +8,7 @@ import gc
 import pickle
 import warnings
 from collections import defaultdict
+from datetime import datetime
 from itertools import chain
 from pathlib import Path
 from typing import List
@@ -46,7 +47,11 @@ def main(cfg: DictConfig) -> None:
         dp = DataProcessor(Path(exp.data_cfg["data_path"]), **exp.data_cfg["dp"])
         dp.run_before_splitting()
         data = dp.get_data_cv()
-        X, y = data[dp.feats + ["is_consumption"]], data[dp.tgt_cols]
+        # ===
+        # X_cols = dp.feats + ["is_consumption", "seg"]
+        X_cols = dp.feats + ["is_consumption"]
+        # ===
+        X, y = data[X_cols], data[dp.tgt_cols]
         exp.log(f"Data shape | X {X.shape}, y {y.shape}")
         exp.log(f"-> #Samples {len(X)}")
         exp.log(f"-> #Features {X.shape[1] - 1}")
@@ -60,7 +65,7 @@ def main(cfg: DictConfig) -> None:
 
         # Build models
         tgt_types = exp.data_cfg["tgt_types"]
-        n_models = exp.data_cfg["cv"]["n_folds"]
+        n_models = exp.data_cfg["cv"]["n_folds"] if not exp.cfg["one_fold_only"] else 1
         model_params = exp.model_cfg["model_params"]
         fit_params = exp.model_cfg["fit_params"]
         models = {tgt_type: build_ml_models(exp.model_name, n_models, **model_params) for tgt_type in tgt_types}
@@ -79,11 +84,14 @@ def main(cfg: DictConfig) -> None:
                 groups=groups,
                 tgt_type=tgt_type,
                 downsamp_quasi0=exp.data_cfg["dp"]["downsamp_quasi0"],
+                one_fold_only=exp.cfg["one_fold_only"],
+                model_type=exp.cfg["model_type"],
             )
 
         # Dump CV output objects
-        with open(exp.exp_dump_path / "models/models.pkl", "wb") as f:
-            pickle.dump(models, f)
+        if exp.cfg["dump_fold_models"]:
+            with open(exp.exp_dump_path / "models/models.pkl", "wb") as f:
+                pickle.dump(models, f)
         oof_pred = np.zeros(cv_result[tgt_types[0]].oof_pred.shape)
         for tgt_type in tgt_types:
             oof_pred = oof_pred + cv_result[tgt_type].oof_pred
@@ -108,19 +116,38 @@ def main(cfg: DictConfig) -> None:
                 # ===
                 return best_iter
 
+            # ===
+            # if roll:
+            # Use the latest 1-year as training data
+            # Submit this prod with cc_raw & cb_raw_base
+            # Act as the base score to verify if retrain at start work
+            # Submit another only retrain at start with exactly the same setting as base
+            # hope the score is the same or close
+            # Submit another monthly retraining only on cc and cb
+            if exp.data_cfg["cv"]["max_train_size"] == 12:
+                DT_TAIL = datetime(2022, 6, 1, 0)
+                data_full = data[data["datetime"] >= DT_TAIL].reset_index(drop=True)
+                X, y = data_full[dp.feats + ["is_consumption"]], data_full[dp.tgt_cols]
+                exp.log(f"## Full-Training Months ## {data_full['datetime'].min()} ~ {data_full['datetime'].max()}")
+            else:
+                exp.log(f"## Full-Training Months ## {data['datetime'].min()} ~ {data['datetime'].max()}")
+            # ===
+
             best_iter = {tgt_type: _get_refit_iter(models[tgt_type]) for tgt_type in tgt_types}
             del models
             gc.collect()
             models = defaultdict(list)
             for tgt_type in tgt_types:
                 model_params_ft = model_params.copy()
-                model_params_ft["n_estimators"] = best_iter[tgt_type]
-                for seed in range(3):
+                # model_params_ft["n_estimators"] = best_iter[tgt_type]
+                model_params_ft["n_estimators"] = model_params["n_estimators"]
+                for seed in range(1):
                     model_params_ft["seed"] = seed
                     models[tgt_type].append(build_ml_models(exp.model_name, 1, **model_params_ft)[0])
 
             for tgt_type in tgt_types:
-                exp.log(f"Run full-training for {tgt_type} models with best iter {best_iter[tgt_type]}...")
+                # exp.log(f"Run full-training for {tgt_type} models with best iter {best_iter[tgt_type]}...")
+                exp.log(f"Run full-training for {tgt_type} models with tuned iter {model_params['n_estimators']}...")
 
                 if tgt_type == "prod":
                     tgt_mask = X["is_consumption"] == 0
@@ -142,7 +169,7 @@ def main(cfg: DictConfig) -> None:
                     X_tr, y_tr = _downsample_quasi0_prod(X_tr, y_tr, **exp.data_cfg["dp"]["downsamp_quasi0"])
                 # ===
 
-                for seed in range(3):
+                for seed in range(1):
                     if cfg["use_wandb"]:
                         seed_run = exp.add_wnb_run(
                             job_type=f"ft_{tgt_type}",

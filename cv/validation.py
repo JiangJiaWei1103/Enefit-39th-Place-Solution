@@ -12,18 +12,37 @@ import lightgbm
 import numpy as np
 import pandas as pd
 import polars as pl
+import wandb
 
 # from category_encoders.utils import convert_input, convert_input_vector
 from sklearn.base import BaseEstimator
 from sklearn.metrics import mean_absolute_error as mae
 from sklearn.model_selection import BaseCrossValidator
 
-import wandb
 from experiment.experiment import Experiment
 from utils.common import dictconfig2dict
 from utils.traits import is_gbdt_instance  # type: ignore
 
 CVResult = namedtuple("CVResult", ["oof_pred", "oof_prfs", "feat_imps"])
+
+# Unseen segment test
+DO_UNSEEN_SEG_TEST = False
+HOLDOUT_UNITS = [
+    "0_1_3",
+    "1_1_3",
+    "2_1_1",
+    "3_1_1",
+    "4_1_3",
+    "5_1_0",
+    "7_1_1",
+    "8_0_3",
+    "9_1_3",
+    "10_1_2",
+    "11_0_2",
+    "13_0_1",
+    "14_1_2",
+    "15_0_1",
+]
 
 
 def cross_validate(
@@ -73,9 +92,10 @@ def cross_validate(
 
         return y_pred
 
-    # Split modeling matters
     tgt_type = kwargs["tgt_type"]
+    model_type = kwargs["model_type"]
     downsamp_quasi0 = kwargs["downsamp_quasi0"]
+    tune = False if "tune" not in kwargs else kwargs["tune"]
 
     # Define CV output objects
     tscv = True if cv.__class__.__name__ == "TSCV" else False
@@ -102,6 +122,12 @@ def cross_validate(
         X_tr, X_val = X.iloc[tr_idx, :], X.iloc[val_idx, :]
         y_tr, y_val = y.iloc[tr_idx, 0], y.iloc[val_idx, 0]
 
+        # Drop selected units from training set to mimic unseen units
+        if DO_UNSEEN_SEG_TEST:
+            X_tr = X_tr[~X_tr["seg"].isin(HOLDOUT_UNITS)]
+            X_tr, X_val = X_tr.drop("seg", axis=1), X_val.drop("seg", axis=1)
+            y_tr = y_tr.loc[X_tr.index]
+
         # Further split by target types
         X_tr, y_tr = _split_data_by_tgt_type(X_tr, y_tr, tgt_type)
         if tgt_type.startswith("prod") and downsamp_quasi0["ratio"] != 1:
@@ -114,23 +140,33 @@ def cross_validate(
             fit_params_fold = {}
         else:
             fit_params_fold = dictconfig2dict(fit_params).copy()
-        if is_gbdt_instance(models[fold], ["xgb", "lgbm", "cat"]):
+        if is_gbdt_instance(models[0], ["xgb", "lgbm", "cat"]):
             fit_params_fold["eval_set"] = [(X_tr, y_tr), (X_val, y_val)]
-            if is_gbdt_instance(models[fold], "lgbm"):
+            if is_gbdt_instance(models[0], "lgbm"):
                 fit_params_fold["callbacks"] = [
                     lightgbm.early_stopping(50),
                     lightgbm.log_evaluation(200),
                 ]
             # Add categorical features...
             # ...
-        models[fold].fit(X_tr, y_tr, **fit_params_fold)
+        if tune:
+            models[0].fit(X_tr, y_tr, **fit_params_fold)
+        else:
+            models[fold].fit(X_tr, y_tr, **fit_params_fold)
 
         # Evaluate on oof
         val_idx = X_val.index
-        oof_pred = _predict(models[fold], X_val)
+        if tune:
+            oof_pred = _predict(models[0], X_val)
+        else:
+            oof_pred = _predict(models[fold], X_val)
         # ===
         if y.shape[1] > 1:
-            oof_pred = oof_pred * y.iloc[val_idx, 1]  # Inverse transform prediction
+            if "dcap" in model_type or "deic" in model_type:
+                oof_pred = oof_pred * y.iloc[val_idx, 1]  # Inverse transform prediction
+            else:
+                oof_pred = oof_pred + y.iloc[val_idx, 1]  # Inverse transform prediction
+
         oof_pred = np.clip(oof_pred, 0, np.inf)  # Clip prediction
         # ===
         if tscv:
@@ -138,14 +174,17 @@ def cross_validate(
         else:
             oof[val_idx] = oof_pred
         if y.shape[1] > 1:
-            prf = mae(y_val * y.iloc[val_idx, 1], oof_pred)
+            if "dcap" in model_type or "deic" in model_type:
+                prf = mae(y_val * y.iloc[val_idx, 1], oof_pred)
+            else:
+                prf = mae(y_val + y.iloc[val_idx, 1], oof_pred)
         else:
             prf = mae(y_val, oof_pred)
-        prfs.append(prf)
+        prfs.append(float(prf))
         exp.log(f"-> MAE: {prf}")
 
         # Store feature importance
-        if is_gbdt_instance(models[fold], ["xgb", "lgbm", "cat"]):
+        if not tune and is_gbdt_instance(models[0], ["xgb", "lgbm", "cat"]):
             feat_imp = _get_feat_imp(models[fold], list(X_tr.columns), imp_type)
             feat_imp["fold"] = fold
             feat_imp["tgt_type"] = tgt_type
@@ -154,6 +193,10 @@ def cross_validate(
         if exp.cfg.use_wandb:
             wandb.log({"val_mae": prf})
             fold_run.finish()
+
+        if kwargs["one_fold_only"]:
+            exp.log("Stop CV (one_fold_only triggered)...")
+            break
 
     cv_result = CVResult(oof, prfs, feat_imps)
 

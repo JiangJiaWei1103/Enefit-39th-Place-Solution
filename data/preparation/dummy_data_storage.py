@@ -17,11 +17,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+import holidays
 import numpy as np
 import pandas as pd
 import polars as pl
 
-from metadata import CAST_COORDS, CAST_COUNTY, COORD_COL2ABBR, DBI, TGT_PK_COLS
+from metadata import CAST_COORDS, CAST_COUNTY, COORD_COL2ABBR, TGT_PK_COLS
 
 
 class DataStorage(object):
@@ -42,6 +43,7 @@ class DataStorage(object):
     FWTH_COLS = [
         "latitude",
         "longitude",
+        "hours_ahead",
         "temperature",
         "dewpoint",
         "cloudcover_high",
@@ -50,7 +52,6 @@ class DataStorage(object):
         "cloudcover_total",
         "10_metre_u_wind_component",
         "10_metre_v_wind_component",
-        DBI,  # For forecast weather safe join
         "forecast_datetime",
         "direct_solar_radiation",
         "surface_solar_radiation_downwards",
@@ -93,10 +94,6 @@ class DataStorage(object):
         "is_consumption",
         "datetime",
         "row_id",
-        # ===
-        # Add this dummy column for joining fwth
-        DBI
-        # ===
     ]
 
     def __init__(
@@ -143,6 +140,7 @@ class DataStorage(object):
             .with_columns(CAST_COUNTY + CAST_COORDS)
         )
         # holidays...
+        self.holidays = list(holidays.country_holidays("EE", years=range(2021, 2026)).keys())
 
     def _load_data(self) -> Tuple[pl.DataFrame, ...]:
         """Specify columns to load as constant???"""
@@ -202,7 +200,7 @@ class DataStorage(object):
 
         self.base_client = pl.concat([self.base_client, new_client]).unique(TGT_PK_COLS + ["date"])
         self.base_fwth = pl.concat([self.base_fwth, new_fwth]).unique(
-            ["latitude", "longitude", DBI, "forecast_datetime"]
+            ["latitude", "longitude", "hours_ahead", "forecast_datetime"]
         )
         self.base_hwth = pl.concat([self.base_hwth, new_hwth]).unique(["datetime", "latitude", "longitude"])
         self.base_elec = pl.concat([self.base_elec, new_elec]).unique(["forecast_date"])
