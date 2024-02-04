@@ -100,7 +100,10 @@ class MainTrainer(BaseTrainer):
             # Retrieve batched raw data
             inputs = {}
             for k, v in batch_data.items():
-                if k not in ["y", "cap"]:
+                if k == "cap":
+                    continue
+
+                if k != "y":
                     inputs[k] = v.to(self.device)
                 else:
                     y = v.to(self.device)
@@ -110,6 +113,7 @@ class MainTrainer(BaseTrainer):
 
             # Derive loss
             loss = self.loss_fn(output, y)
+            # loss = self.loss_fn(output[:, 24:], y[:, 24:])
             train_loss_total += loss.item()
             loss = loss / self.grad_accum_steps
 
@@ -159,7 +163,10 @@ class MainTrainer(BaseTrainer):
             # Retrieve batched raw data
             inputs = {}
             for k, v in batch_data.items():
-                if k not in ["y", "cap"]:
+                if k == "cap":
+                    continue
+
+                if k != "y":
                     inputs[k] = v.to(self.device)
                 else:
                     y = v.to(self.device)
@@ -169,6 +176,8 @@ class MainTrainer(BaseTrainer):
 
             # Derive loss
             loss = self.loss_fn(output, y)
+            # loss = self.loss_fn(output[:, :24], y[:, :24])
+            # loss = self.loss_fn(output[:, 24:], y[:, 24:])
             eval_loss_total += loss.item()
 
             # Record batched output

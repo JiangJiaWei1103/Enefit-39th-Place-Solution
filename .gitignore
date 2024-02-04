@@ -22,6 +22,7 @@ notebooks/
 legacy/
 
 # Local cfg
+config/model/Exp*.yaml
 
 # Data
 data/raw*/

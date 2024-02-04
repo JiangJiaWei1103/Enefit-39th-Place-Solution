@@ -20,3 +20,7 @@ seed: null
 use_wandb: True
 # If True, the experiment runs for only one fold
 one_fold_only: False
+
+# Add-on options
+dump_fold_models: False
+full_train: False
