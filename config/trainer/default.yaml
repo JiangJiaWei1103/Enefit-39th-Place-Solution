@@ -8,7 +8,7 @@ defaults:
 
 # == Trainer Core ==
 device: "cuda:0"
-epochs: 80
+epochs: 20
 loss_fn:
     name: "ml1"
     rescale: False
@@ -23,9 +23,9 @@ es:
     mode: null
 
 dataloader:
-    batch_size: 128
+    batch_size: 64
     shuffle: True
-    num_workers: 4
+    num_workers: 2
     pin_memory: False
     drop_last: False
 
