@@ -1,5 +1,5 @@
-# Enefit - Predict Energy Behavior of Prosumers - Public 71st Place Solution (Tmp.)
-> Solution writeup: [Public 71st Solution Writeup](https://www.kaggle.com/competitions/predict-energy-behavior-of-prosumers/discussion/472598)
+# Enefit - Predict Energy Behavior of Prosumers - Public 71st Place Solution (Private 39th)
+> Solution writeup: [Public 71st Solution Writeup (Private 39th)](https://www.kaggle.com/competitions/predict-energy-behavior-of-prosumers/discussion/472598)
 
 ## Overview
 In this competition, competitors need to build ML models to predict energy production and consumption patterns of prosumers in *Estonia*. Specifically speaking, our solution is mainly composed of lightweight feature engineering with conservative selection, target engineering, and a large model pool with simple ensemble.
