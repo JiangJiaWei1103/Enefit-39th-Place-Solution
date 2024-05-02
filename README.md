@@ -52,6 +52,6 @@ We focus on local cross-validation following chronological order and observe whe
 CV and LB scores (still waiting...) are shown as follows,
 |  | CV Fold2 (202209 ~ 202211) | CV Fold1 (202210 ~ 202301) | CV Fold0 (202303 ~ 202305) | 3-Fold Avg | Public LB (202306 ~ 202308) | Private LB (202402 ~ 202404) |
 | --- | --- | --- | --- | --- | --- | --- |
-| MAE | 30.47 | 27.06 | 51.32 | 36.29 | x | x |
-| MAE | 29.71 | 26.32 | 51.00 | 35.68 | x | x |
+| MAE | 30.47 | 27.06 | 51.32 | 36.29 | x | 59.20 |
+| MAE | 29.71 | 26.32 | 51.00 | 35.68 | x | 58.29 |
 
